@@ -1,0 +1,26 @@
+{
+    "name": "LLM Search Enhancer",
+    "version": "1.0.0",
+    "manifest_version": 3,
+    "description": "Chrome extension that enhances Google search with AI-powered query expansion and related topic suggestions",
+    "permissions": [
+      "activeTab", 
+      "storage", 
+      "history", 
+      "geolocation"
+    ],
+    "host_permissions": [
+      "https://www.google.com/*",
+      "https://*/*"
+    ],
+    "background": {
+      "service_worker": "src/background.js"
+    },
+    "content_scripts": [
+      {
+        "matches": ["https://www.google.com/search*", "https://*/*"],
+        "js": ["src/content.js"],
+        "css": ["src/styles.css"]
+      }
+    ]
+  }

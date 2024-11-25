@@ -1,0 +1,35 @@
+.llm-query-expand {
+    margin-left: 10px;
+    padding: 8px 16px;
+    background-color: #4285f4;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.llm-query-expand:hover {
+    background-color: #357abd;
+}
+  
+  .related-topics-container {
+    position: fixed;
+    right: 20px;
+    top: 100px;
+    width: 250px;
+    background-color: white;
+    border: 1px solid #ddd;
+    padding: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    z-index: 1000;
+  }
+  
+  .related-topics-container div {
+    padding: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  
+  .related-topics-container div:hover {
+    background-color: #f0f0f0;
+  }
