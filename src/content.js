@@ -1,3 +1,5 @@
+let isButtonInjected = false;
+
 async function fetchBrowserHistory() {
     try {
         if (!chrome.runtime?.id) {
@@ -50,6 +52,10 @@ async function fetchBrowserHistory() {
 }
 
 function injectQueryExpansionButton() {
+    if (isButtonInjected && document.querySelector('.llm-query-expand')) {
+        return;
+    }
+
     console.log('Attempting to inject query expansion button...');
     
     const searchBar = document.querySelector('textarea[name="q"], input[name="q"]');
@@ -57,11 +63,10 @@ function injectQueryExpansionButton() {
         console.log('❌ Search bar not found');
         return;
     }
-    console.log('✅ Search bar found:', searchBar);
 
-    if (document.querySelector('.llm-query-expand')) {
-        console.log('Button already exists, skipping injection');
-        return;
+    const existingButton = document.querySelector('.llm-query-expand');
+    if (existingButton) {
+        existingButton.remove();
     }
 
     const button = document.createElement('button');
@@ -81,105 +86,73 @@ function injectQueryExpansionButton() {
         display: inline-block !important;
     `;
     
-    button.addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        console.log('Button clicked!');
-        const query = searchBar.value;
-        console.log('Sending query:', query);
-        
-        if (!query) {
-            console.log('❌ No query found');
-            return;
-        }
-
-        try {
-            if (!chrome.runtime?.id) {
-                throw new Error('Extension context invalidated');
-            }
-            
-            // Use the renamed function
-            const historyItems = await fetchBrowserHistory();  // Changed this line
-
-            // Get geolocation before sending the message
-            const userLocation = await new Promise((resolve) => {
-                if (!navigator.geolocation) {
-                    resolve('');
-                    return;
-                }
-
-                navigator.geolocation.getCurrentPosition(
-                    async (position) => {
-                        try {
-                            const { latitude, longitude } = position.coords;
-                            // Add a 1-second delay before making the request
-                            await new Promise(resolve => setTimeout(resolve, 1000));
-                            
-                            const response = await fetch(
-                                `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
-                            );
-                            const data = await response.json();
-                            
-                            // Return just the country name, or empty string if there's an error
-                            resolve(data.address?.country || '');
-                        } catch (error) {
-                            console.error('Geocoding error:', error);
-                            resolve('');
-                        }
-                    },
-                    (error) => {
-                        console.log('Geolocation error:', error);
-                        resolve('');
-                    }
-                );
-            });
-
-            // Then send the expand query request with the location
-            const response = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage(
-                    {
-                        action: 'expandQuery',
-                        query: query,
-                        browserHistory: historyItems,  // Changed this line
-                        location: userLocation
-                    },
-                    function(response) {
-                        if (chrome.runtime.lastError) {
-                            reject(chrome.runtime.lastError);
-                        } else {
-                            resolve(response);
-                        }
-                    }
-                );
-            });
-            
-            console.log('Received response:', response);
-            
-            if (response.error) {
-                console.error('Error from background script:', response.error);
-            } else if (response.expansions) {
-                console.log('Query expansions:', response.expansions);
-                // Optionally update the search input
-                searchBar.value = response.expansions;
-            }
-        } catch (error) {
-            console.error('Error in message handling:', error);
-            if (error.message === 'Extension context invalidated') {
-                chrome.runtime.reload();
-                window.location.reload();
-            }
-        }
-    });
-
+    button.addEventListener('click', handleButtonClick);
+    
     const searchWrapper = searchBar.closest('.RNNXgb') || searchBar.closest('form');
     if (searchWrapper) {
         searchBar.insertAdjacentElement('afterend', button);
-        console.log('✅ Button added after search bar, parent:', searchWrapper);
-        console.log('Button dimensions:', button.getBoundingClientRect());
-    } else {
-        console.log('❌ Could not find appropriate wrapper, falling back to direct parent');
-        searchBar.parentNode.appendChild(button);
+        console.log('✅ Button added after search bar');
+        isButtonInjected = true;
+    }
+}
+
+async function handleButtonClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const button = e.target;
+    const searchBar = document.querySelector('textarea[name="q"], input[name="q"]');
+    
+    if (!searchBar) {
+        console.error('Search bar not found');
+        return;
+    }
+    
+    const query = searchBar.value;
+    if (!query) {
+        console.log('❌ No query found');
+        return;
+    }
+
+    button.textContent = '⌛ Processing...';
+    button.disabled = true;
+
+    try {
+        const historyItems = await fetchBrowserHistory();
+        const userLocation = await getLocation();
+        
+        console.log('Sending request with location:', userLocation);
+        
+        const response = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                {
+                    action: 'expandQuery',
+                    query: query,
+                    browserHistory: historyItems,
+                    location: userLocation
+                },
+                function(response) {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve(response);
+                    }
+                }
+            );
+        });
+        
+        if (response.error) {
+            console.error('Error from background script:', response.error);
+        } else if (response.expansions) {
+            console.log('Query expansions:', response.expansions);
+            searchBar.value = response.expansions;
+            searchBar.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    } catch (error) {
+        console.error('Error in click handler:', error);
+    } finally {
+        button.textContent = 'AI Query Expand';
+        button.disabled = false;
     }
 }
 
@@ -235,6 +208,7 @@ function injectSuggestionsButton() {
         e.preventDefault();
         e.stopPropagation();
         
+        // Define pageText using the extractPageContent function
         const pageText = extractPageContent();
         
         // Show loading state
@@ -244,7 +218,7 @@ function injectSuggestionsButton() {
         try {
             const response = await chrome.runtime.sendMessage({
                 action: 'getRelatedTopics',
-                pageText: pageText
+                pageText: pageText  // Now pageText is properly defined
             });
             
             if (response.error) {
@@ -369,33 +343,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Helper function to format location
 function formatLocation(address) {
-    if (!address) return '';
+    if (!address) return 'Unknown Location';
     
     const parts = [];
     
-    // Add city/suburb
-    if (address.suburb) {
-        parts.push(address.suburb);
-    } else if (address.city) {
-        parts.push(address.city);
-    } else if (address.town) {
-        parts.push(address.town);
-    }
+    // Add city/town/suburb
+    if (address.city) parts.push(address.city);
+    else if (address.town) parts.push(address.town);
+    else if (address.suburb) parts.push(address.suburb);
     
-    // Add state/province if available
-    if (address.state) {
-        parts.push(address.state);
-    }
+    // Add state/province
+    if (address.state) parts.push(address.state);
     
     // Add country
-    if (address.country) {
-        parts.push(address.country);
-    }
+    if (address.country) parts.push(address.country);
     
-    return parts.join(', ');
+    return parts.length > 0 ? parts.join(', ') : 'Unknown Location';
 }
 
-// Helper function to get meaningful geolocation error messages
+// Helper function for geolocation errors
 function getGeolocationErrorMessage(error) {
     switch(error.code) {
         case error.PERMISSION_DENIED:
@@ -461,9 +427,84 @@ function displayRelatedTopics(topics) {
     topicsContainer.appendChild(topicsList);
 }
 
-// Find where you're handling the response from getRelatedTopics and add:
-chrome.runtime.sendMessage({ action: 'getRelatedTopics', pageText: pageText }, response => {
+// Add this function to safely extract page text
+function getPageText() {
+    return document.body.innerText || 
+           document.body.textContent || 
+           '';
+}
+
+// When making the request to the background script, use the getPageText function
+chrome.runtime.sendMessage({
+    action: 'summarizeContent',
+    pageText: getPageText(),  // Use the extracted text
+    title: document.title
+}, response => {
+    // Handle response
+});
+
+// FIX: Replace with this version that uses the page content
+chrome.runtime.sendMessage({ 
+    action: 'getRelatedTopics', 
+    pageText: getPageText(),  // Use the function to get the text
+    title: document.title 
+}, response => {
     if (response.success && response.topics) {
         displayRelatedTopics(response.topics);
     }
 });
+
+async function getLocation() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+            console.log('Geolocation not supported');
+            resolve('');
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                try {
+                    const { latitude, longitude } = position.coords;
+                    console.log('Got coordinates:', { latitude, longitude });
+                    
+                    // Use OpenStreetMap's Nominatim service with proper headers
+                    const response = await fetch(
+                        `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+                        {
+                            headers: {
+                                'User-Agent': 'Chrome Extension (your-extension@example.com)',
+                                'Accept-Language': 'en-US,en'
+                            }
+                        }
+                    );
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('Location data received:', data);
+                    
+                    // Format the location data
+                    const location = formatLocation(data.address);
+                    console.log('Formatted location:', location);
+                    
+                    resolve(location);
+                } catch (error) {
+                    console.error('Error getting location:', error);
+                    resolve('');
+                }
+            },
+            (error) => {
+                console.error('Geolocation error:', getGeolocationErrorMessage(error));
+                resolve('');
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 300000 // 5 minutes
+            }
+        );
+    });
+}

@@ -3,7 +3,10 @@ importScripts('model.js');
 async function queryLLM(prompt, context) {
     console.log('🔍 QueryLLM called with:', { prompt, context });
 
-    const queryExpansion = await queryModel(prompt, context.browserHistory, context.location);
+    const queryExpansion = await queryModel(prompt, {
+        location: context.location,
+        browserHistory: context.browserHistory
+    });
 
     return queryExpansion;
 }
@@ -60,24 +63,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'expandQuery') {
         (async () => {
             try {
-                // Simplified - just use empty string for location
-                const location = '';
-
-                console.log('Sending to queryLLM:', {
-                    query: request.query,
-                    context: {
-                        location,
-                        browserHistory: request.browserHistory
-                    }
-                });
+                const location = request.location;
+                console.log('Background received location:', location); // Debug log
                 
                 const queryExpansion = await queryLLM(
                     request.query,
                     {
-                        location,
-                        browserHistory: request.browserHistory
+                        location: location,
+                        browserHistory: request.browserHistory || []
                     }
                 );
+                
                 console.log('Query expansion result:', queryExpansion);
                 sendResponse({ expansions: queryExpansion });
             } catch (error) {
