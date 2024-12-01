@@ -14,7 +14,8 @@
       "https://www.google.com/*",
       "https://*/*",
       "https://api.opencagedata.com/*",
-      "https://nominatim.openstreetmap.org/*"
+      "https://nominatim.openstreetmap.org/*",
+      "http://*/*"
     ],
     "background": {
       "service_worker": "src/background.js"
