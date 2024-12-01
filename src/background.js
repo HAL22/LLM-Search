@@ -1,16 +1,11 @@
-const API_ENDPOINT = 'https://your-llm-api-endpoint.com/generate';
+importScripts('model.js');
 
 async function queryLLM(prompt, context) {
-  console.log('QueryLLM input:', { 
-    prompt,
-    context,
-    historyLength: context.browserHistory?.length || 0
-  });
-  
-  console.log('QueryLLM called with:', { prompt, context });
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  return "This is a test response for: " + prompt;
+    console.log('🔍 QueryLLM called with:', { prompt, context });
+
+    const queryExpansion = await queryModel(prompt, context.browserHistory, context.location);
+
+    return queryExpansion;
 }
 
 async function suggestionLLM(pageContent) {
@@ -32,70 +27,77 @@ async function suggestionLLM(pageContent) {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // Detailed request inspection
-  console.log('🔍 Full request details:', {
-    requestKeys: Object.keys(request),
-    rawRequest: request,
-    browserHistory: request.browserHistory,
-    timestamp: new Date().toISOString()
-  });
-  
-  console.warn('Background Script Active:', request.action);
-  
-  if (request.action === 'expandQuery') {
-    (async () => {
-      try {
-        console.log('Sending to queryLLM:', {
-          query: request.query,
-          context: {
-            location: request.location,
-            browserHistory: request.browserHistory
-          }
-        });
-        const queryExpansion = await queryLLM(
-          request.query,
-          {
-            location: request.location,
-            browserHistory: request.browserHistory
-          }
-        );
-        console.log('Query expansion result:', queryExpansion);
-        sendResponse({ expansions: queryExpansion });
-      } catch (error) {
-        console.error('Error in background script:', error);
-        sendResponse({ error: error.message });
-      }
-    })();
-    
-    // Must return true to indicate async response
-    return true;
-  }
-
-  if (request.action === 'getRelatedTopics') {
-    (async () => {
-      try {
-        const relatedTopics = await suggestionLLM(request.pageText);
-        sendResponse({ topics: relatedTopics });
-      } catch (error) {
-        console.error('Error in background script:', error);
-        sendResponse({ error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (request.action === 'getHistory') {
-    chrome.history.search({
-      text: '',
-      maxResults: 10,
-      startTime: Date.now() - (7 * 24 * 60 * 60 * 1000)
-    }, (historyItems) => {
-      sendResponse({
-        history: historyItems.map(item => item.url)
-      });
+    // Detailed request inspection
+    console.log('🔍 Background Script Active:', request.action, {
+        requestKeys: Object.keys(request),
+        timestamp: new Date().toISOString()
     });
-    return true; // Required for async response
-  }
 
-  return true;
+    // Permission check handler
+    if (request.action === 'checkHistoryPermission') {
+        chrome.permissions.contains({
+            permissions: ['history']
+        }, (hasPermission) => {
+            sendResponse({ hasPermission });
+        });
+        return true;
+    }
+
+    // History fetch handler
+    if (request.action === 'getHistory') {
+        chrome.history.search({
+            text: '',
+            maxResults: 100,
+            startTime: Date.now() - (7 * 24 * 60 * 60 * 1000)  // Last 7 days
+        }, (historyItems) => {
+            sendResponse({
+                history: historyItems.map(item => ({
+                    url: item.url,
+                    title: item.title,
+                    lastVisitTime: item.lastVisitTime
+                }))
+            });
+        });
+        return true;
+    }
+
+    // Query expansion handler
+    if (request.action === 'expandQuery') {
+        (async () => {
+            try {
+                // Send message to active tab to get location
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                const location = await new Promise((resolve) => {
+                    chrome.tabs.sendMessage(tab.id, { action: 'getLocation' }, (response) => {
+                        resolve(response?.location || '');
+                    });
+                });
+
+                console.log('Sending to queryLLM:', {
+                    query: request.query,
+                    context: {
+                        location,
+                        browserHistory: request.browserHistory
+                    }
+                });
+                
+                const queryExpansion = await queryLLM(
+                    request.query,
+                    {
+                        location,
+                        browserHistory: request.browserHistory
+                    }
+                );
+                console.log('Query expansion result:', queryExpansion);
+                sendResponse({ expansions: queryExpansion });
+            } catch (error) {
+                console.error('Error in query expansion:', error);
+                sendResponse({ error: error.message });
+            }
+        })();
+        return true;
+    }
+
+    // Always return true for async response handling
+    return true;
 });

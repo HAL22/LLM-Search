@@ -7,11 +7,14 @@
       "activeTab", 
       "storage", 
       "history", 
-      "geolocation"
+      "geolocation",
+      "tabs"
     ],
     "host_permissions": [
       "https://www.google.com/*",
-      "https://*/*"
+      "https://*/*",
+      "https://api.opencagedata.com/*",
+      "https://nominatim.openstreetmap.org/*"
     ],
     "background": {
       "service_worker": "src/background.js"
@@ -19,7 +22,7 @@
     "content_scripts": [
       {
         "matches": ["https://www.google.com/search*", "https://*/*"],
-        "js": ["src/content.js"],
+        "js": [ "src/content.js"],
         "css": ["src/styles.css"]
       }
     ]

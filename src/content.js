@@ -1,3 +1,54 @@
+async function fetchBrowserHistory() {
+    try {
+        if (!chrome.runtime?.id) {
+            throw new Error('Extension context invalidated');
+        }
+
+        // First check permission
+        const permissionResponse = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                { action: 'checkHistoryPermission' },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve(response);
+                    }
+                }
+            );
+        });
+
+        if (!permissionResponse.hasPermission) {
+            throw new Error('History permission not granted');
+        }
+
+        // Get history through background script
+        const historyResponse = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+                { action: 'getHistory' },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve(response);
+                    }
+                }
+            );
+        });
+
+        return historyResponse.history || [];
+
+    } catch (error) {
+        console.log('Browser history error:', error);
+        if (error.message === 'Extension context invalidated') {
+            chrome.runtime.reload();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return fetchBrowserHistory();
+        }
+        return [];
+    }
+}
+
 function injectQueryExpansionButton() {
     console.log('Attempting to inject query expansion button...');
     
@@ -44,28 +95,54 @@ function injectQueryExpansionButton() {
         }
 
         try {
-            // First, request history from background script
-            const browserHistory = await new Promise((resolve, reject) => {
-                chrome.runtime.sendMessage(
-                    { action: 'getHistory' },
-                    function(response) {
-                        if (chrome.runtime.lastError) {
-                            reject(chrome.runtime.lastError);
-                        } else {
-                            resolve(response.history);
+            if (!chrome.runtime?.id) {
+                throw new Error('Extension context invalidated');
+            }
+            
+            // Use the renamed function
+            const historyItems = await fetchBrowserHistory();  // Changed this line
+
+            // Get geolocation before sending the message
+            const userLocation = await new Promise((resolve) => {
+                if (!navigator.geolocation) {
+                    resolve('');
+                    return;
+                }
+
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        try {
+                            const { latitude, longitude } = position.coords;
+                            // Add a 1-second delay before making the request
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            
+                            const response = await fetch(
+                                `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
+                            );
+                            const data = await response.json();
+                            
+                            // Return just the country name, or empty string if there's an error
+                            resolve(data.address?.country || '');
+                        } catch (error) {
+                            console.error('Geocoding error:', error);
+                            resolve('');
                         }
+                    },
+                    (error) => {
+                        console.log('Geolocation error:', error);
+                        resolve('');
                     }
                 );
             });
 
-            // Then send the expand query request with the history
+            // Then send the expand query request with the location
             const response = await new Promise((resolve, reject) => {
                 chrome.runtime.sendMessage(
                     {
                         action: 'expandQuery',
                         query: query,
-                        browserHistory: browserHistory,
-                        location: window.location.href
+                        browserHistory: historyItems,  // Changed this line
+                        location: userLocation
                     },
                     function(response) {
                         if (chrome.runtime.lastError) {
@@ -88,6 +165,10 @@ function injectQueryExpansionButton() {
             }
         } catch (error) {
             console.error('Error in message handling:', error);
+            if (error.message === 'Extension context invalidated') {
+                chrome.runtime.reload();
+                window.location.reload();
+            }
         }
     });
 
@@ -213,4 +294,128 @@ function displaySuggestions(suggestions) {
 // Add this to your existing initialization code
 if (window.location.hostname !== 'www.google.com') {
     injectSuggestionsButton();
+}
+
+// Add this message listener alongside your other code
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'getLocation') {
+        // Set a timeout for the entire operation
+        const timeoutId = setTimeout(() => {
+            console.warn('Location request timed out');
+            sendResponse({ location: '' });
+        }, 10000); // 10 second timeout
+
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                try {
+                    const response = await fetch(
+                        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.coords.latitude}&lon=${position.coords.longitude}`,
+                        {
+                            headers: {
+                                'Accept': 'application/json',
+                                'Accept-Language': 'en-US',
+                            },
+                            referrerPolicy: 'no-referrer'
+                        }
+                    );
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Format the location to be more concise
+                    const formattedLocation = formatLocation(data.address);
+                    
+                    clearTimeout(timeoutId);
+                    console.log('Location formatted:', formattedLocation);
+                    sendResponse({ location: formattedLocation });
+                } catch (error) {
+                    clearTimeout(timeoutId);
+                    console.error('Geocoding error:', {
+                        message: error.message,
+                        stack: error.stack
+                    });
+                    sendResponse({ location: '' });
+                }
+            },
+            (error) => {
+                clearTimeout(timeoutId);
+                const errorMessage = getGeolocationErrorMessage(error);
+                console.error('Geolocation error:', errorMessage);
+                sendResponse({ location: '' });
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 300000 // Cache location for 5 minutes
+            }
+        );
+        return true;
+    }
+});
+
+// Helper function to format location
+function formatLocation(address) {
+    if (!address) return '';
+    
+    const parts = [];
+    
+    // Add city/suburb
+    if (address.suburb) {
+        parts.push(address.suburb);
+    } else if (address.city) {
+        parts.push(address.city);
+    } else if (address.town) {
+        parts.push(address.town);
+    }
+    
+    // Add state/province if available
+    if (address.state) {
+        parts.push(address.state);
+    }
+    
+    // Add country
+    if (address.country) {
+        parts.push(address.country);
+    }
+    
+    return parts.join(', ');
+}
+
+// Helper function to get meaningful geolocation error messages
+function getGeolocationErrorMessage(error) {
+    switch(error.code) {
+        case error.PERMISSION_DENIED:
+            return 'Location access denied by user';
+        case error.POSITION_UNAVAILABLE:
+            return 'Location information unavailable';
+        case error.TIMEOUT:
+            return 'Location request timed out';
+        default:
+            return `Unknown error: ${error.message}`;
+    }
+}
+
+// Add retry logic for failed requests
+async function fetchWithRetry(url, options, maxRetries = 3) {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            const response = await fetch(url, options);
+            if (response.ok) return response;
+            
+            // If rate limited, wait and retry
+            if (response.status === 429) {
+                const waitTime = Math.pow(2, i) * 1000; // Exponential backoff
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                continue;
+            }
+            
+            throw new Error(`HTTP error! status: ${response.status}`);
+        } catch (error) {
+            if (i === maxRetries - 1) throw error; // Last retry failed
+            console.warn(`Retry ${i + 1}/${maxRetries} failed:`, error);
+        }
+    }
 }
