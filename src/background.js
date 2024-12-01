@@ -10,20 +10,15 @@ async function queryLLM(prompt, context) {
 
 async function suggestionLLM(pageContent) {
     console.log('🤖 SuggestionLLM called with content length:', pageContent.length);
-    
-    // Mock response for testing - remove process.env check
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return `1. First related topic about: ${pageContent.slice(0, 50)}...
-2. Second related topic
-3. Third related topic
-4. Fourth related topic
-5. Fifth related topic`;
 
-    // Comment out the real implementation for now
-    /*
-    try {
-        const response = await fetch(API_ENDPOINT...
-    */
+    const suggestion = await suggestTopicsModel(pageContent);
+    
+    // Ensure we're working with a string response
+    if (typeof suggestion === 'object') {
+        return suggestion.join(', ');
+    }
+    
+    return suggestion;
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -65,13 +60,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'expandQuery') {
         (async () => {
             try {
-                // Send message to active tab to get location
-                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                const location = await new Promise((resolve) => {
-                    chrome.tabs.sendMessage(tab.id, { action: 'getLocation' }, (response) => {
-                        resolve(response?.location || '');
-                    });
-                });
+                // Simplified - just use empty string for location
+                const location = '';
 
                 console.log('Sending to queryLLM:', {
                     query: request.query,
@@ -93,6 +83,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             } catch (error) {
                 console.error('Error in query expansion:', error);
                 sendResponse({ error: error.message });
+            }
+        })();
+        return true;
+    }
+
+    // Suggestion handler
+    if (request.action === 'getSuggestions') {
+        (async () => {
+            try {
+                console.log('Starting suggestion processing for content length:', request.pageContent?.length);
+                const suggestions = await suggestionLLM(request.pageContent);
+                console.log('Suggestion results:', suggestions);
+                if (!suggestions) {
+                    throw new Error('No suggestions received from model');
+                }
+                sendResponse({ suggestions, success: true });
+            } catch (error) {
+                console.error('Error getting suggestions:', error);
+                sendResponse({ error: error.message, success: false });
+            }
+        })();
+        return true;
+    }
+
+    // Related topics handler
+    if (request.action === 'getRelatedTopics') {
+        (async () => {
+            try {
+                console.log('Starting suggestion processing for content length:', request.pageText?.length);
+                const suggestions = await suggestionLLM(request.pageText);
+                console.log('Suggestion results:', suggestions);
+                if (!suggestions) {
+                    throw new Error('No suggestions received from model');
+                }
+                
+                // First ensure we're working with a string and split it
+                const suggestionsStr = typeof suggestions === 'string' ? suggestions : suggestions.toString();
+                const topicsList = suggestionsStr.split(',').map(topic => topic.trim());
+                
+                // Format suggestions into list with Google search links
+                const formattedTopics = topicsList.map(topic => ({
+                    text: topic,
+                    searchUrl: `https://www.google.com/search?q=${encodeURIComponent(topic)}`
+                }));
+                
+                sendResponse({ topics: formattedTopics, success: true });
+            } catch (error) {
+                console.error('Error getting suggestions:', error);
+                sendResponse({ error: error.message, success: false });
             }
         })();
         return true;

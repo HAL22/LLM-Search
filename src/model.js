@@ -25,4 +25,17 @@ Return only the refined search query without any explanations.`;
     const answer = await session.prompt(userPrompt);
 
     return answer;
-}    
+}
+
+async function suggestTopicsModel(prompt) {
+    const systemPrompt = `You are an intelligent search assistant you will be given text from a webpage and you will suggest five related topics.
+    You will return a list of related topics separated by commas.`;
+
+    const session = await ai.languageModel.create({
+        systemPrompt: systemPrompt
+    })
+
+    const answer = await session.prompt(prompt);
+
+    return answer;
+}

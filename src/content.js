@@ -262,7 +262,7 @@ function injectSuggestionsButton() {
     document.body.appendChild(button);
 }
 
-// Add this function to display the suggestions
+// Update this function to properly display the suggestions
 function displaySuggestions(suggestions) {
     let container = document.getElementById('ai-suggestions-container');
     if (!container) {
@@ -285,9 +285,20 @@ function displaySuggestions(suggestions) {
         document.body.appendChild(container);
     }
     
+    // Create the HTML for suggestions
+    const topicsHtml = suggestions.map(topic => `
+        <div style="margin: 8px 0;">
+            <a href="${topic.searchUrl}" 
+               target="_blank" 
+               style="text-decoration: none; color: #1a0dab;">
+                ${topic.text}
+            </a>
+        </div>
+    `).join('');
+    
     container.innerHTML = `
         <h3 style="margin-top: 0;">Related Topics</h3>
-        <div>${suggestions}</div>
+        <div>${topicsHtml}</div>
     `;
 }
 
@@ -419,3 +430,40 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
         }
     }
 }
+
+function displayRelatedTopics(topics) {
+    const topicsContainer = document.getElementById('related-topics');
+    if (!topicsContainer) return;
+
+    // Clear any existing topics
+    topicsContainer.innerHTML = '';
+
+    // Create a list to hold the topics
+    const topicsList = document.createElement('ul');
+    topicsList.style.listStyle = 'none';
+    topicsList.style.padding = '0';
+
+    // Create a link for each topic
+    topics.forEach(topic => {
+        const li = document.createElement('li');
+        const link = document.createElement('a');
+        link.href = topic.searchUrl;
+        link.textContent = topic.text;
+        link.target = "_blank";  // Opens in new tab
+        link.style.textDecoration = 'none';
+        link.style.color = '#1a0dab';  // Google-like link color
+        
+        li.style.margin = '8px 0';
+        li.appendChild(link);
+        topicsList.appendChild(li);
+    });
+
+    topicsContainer.appendChild(topicsList);
+}
+
+// Find where you're handling the response from getRelatedTopics and add:
+chrome.runtime.sendMessage({ action: 'getRelatedTopics', pageText: pageText }, response => {
+    if (response.success && response.topics) {
+        displayRelatedTopics(response.topics);
+    }
+});
