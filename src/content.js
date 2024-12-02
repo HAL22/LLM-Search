@@ -218,12 +218,19 @@ function addQueryExpandButton() {
         setLoadingState(true);
 
         try {
+            // Get both location and history
+            const [location, recentHistory] = await Promise.all([
+                getCurrentLocation(),
+                getRecentHistory()
+            ]);
+
             console.log('Sending query for expansion:', query);
             const response = await chrome.runtime.sendMessage({
                 action: 'queryModel',
                 prompt: query,
                 context: {
-                    location: await getCurrentLocation()
+                    location: location,
+                    recentHistory: recentHistory
                 }
             });
 
@@ -475,6 +482,23 @@ function displayTopics(topics) {
     container.appendChild(header);
     container.appendChild(list);
     document.body.appendChild(container);
+}
+
+// Update the history fetching function
+async function getRecentHistory(minutes = 30, maxItems = 10) {
+    try {
+        const response = await chrome.runtime.sendMessage({
+            action: 'getHistory',
+            params: {
+                minutes: minutes,
+                maxItems: maxItems
+            }
+        });
+        return response.history || [];
+    } catch (error) {
+        console.error('Error fetching history:', error);
+        return [];
+    }
 }
 
 

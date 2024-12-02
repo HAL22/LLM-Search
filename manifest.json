@@ -6,7 +6,8 @@
     "permissions": [
       "activeTab", 
       "scripting",
-      "geolocation"
+      "geolocation",
+      "history"
     ],
     "host_permissions": [
       "*://*/*",

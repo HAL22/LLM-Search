@@ -93,19 +93,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // History fetch handler
     if (request.action === 'getHistory') {
+        const { minutes, maxItems } = request.params;
+        const millisecondsPerMinute = 60 * 1000;
+        const startTime = new Date().getTime() - (minutes * millisecondsPerMinute);
+
         chrome.history.search({
-            text: '',
-            maxResults: 100,
-            startTime: Date.now() - (7 * 24 * 60 * 60 * 1000)  // Last 7 days
-        }, (historyItems) => {
-            sendResponse({
-                history: historyItems.map(item => ({
-                    url: item.url,
-                    title: item.title,
-                    lastVisitTime: item.lastVisitTime
-                }))
-            });
+            text: '',            // Empty string to get all history
+            startTime: startTime,
+            maxResults: maxItems
+        }, (history) => {
+            const processedHistory = history.map(item => ({
+                title: item.title,
+                url: item.url,
+                visitCount: item.visitCount
+            }));
+            sendResponse({ history: processedHistory });
         });
+
+        // Required for async response
         return true;
     }
 
