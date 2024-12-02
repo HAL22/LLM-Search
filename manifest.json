@@ -2,29 +2,25 @@
     "name": "LLM Search Enhancer",
     "version": "1.0.0",
     "manifest_version": 3,
-    "description": "Chrome extension that enhances Google search with AI-powered query expansion and related topic suggestions",
+    "description": "Chrome extension that enhances search with AI-powered features",
     "permissions": [
       "activeTab", 
-      "storage", 
-      "history", 
-      "geolocation",
-      "tabs"
+      "scripting",
+      "geolocation"
     ],
     "host_permissions": [
-      "https://www.google.com/*",
-      "https://*/*",
-      "https://api.opencagedata.com/*",
-      "https://nominatim.openstreetmap.org/*",
-      "http://*/*"
+      "*://*/*",
+      "https://api.opencagedata.com/*"
     ],
     "background": {
       "service_worker": "src/background.js"
     },
     "content_scripts": [
       {
-        "matches": ["https://www.google.com/search*", "https://*/*"],
+        "matches": ["<all_urls>"],
         "js": [ "src/content.js"],
-        "css": ["src/styles.css"]
+        "css": ["src/styles.css"],
+        "run_at": "document_end"
       }
     ]
   }
