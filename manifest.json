@@ -1,5 +1,5 @@
 {
-    "name": "LLM Search Enhancer",
+    "name": "SearchWhisper",
     "version": "1.0.0",
     "manifest_version": 3,
     "description": "Chrome extension that enhances search with AI-powered features",
@@ -23,5 +23,8 @@
         "css": ["src/styles.css"],
         "run_at": "document_end"
       }
-    ]
+    ],
+    "icons": {
+        "128": "res/icon.png"
+    }
   }

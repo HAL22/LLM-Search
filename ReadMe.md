@@ -1,6 +1,6 @@
-# AI Search Assistant
+# SearchWhisper 🔍✨
 
-A Chrome extension that enhances your search experience with AI-powered features.
+Your AI companion that whispers smarter search suggestions. SearchWhisper enhances your Google searches by intelligently expanding queries based on your location and browsing context.
 
 ## Features
 
